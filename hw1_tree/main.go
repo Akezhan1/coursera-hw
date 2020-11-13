@@ -5,7 +5,7 @@ import (
 	"io"
 	"io/ioutil"
 	"os"
-	"strings"
+	path2 "path"
 )
 
 func main() {
@@ -21,62 +21,60 @@ func main() {
 	}
 }
 
-func dirTree(out io.Writer, path string, flag bool) error {
-	files, err := ioutil.ReadDir(path)
+func dirTree(out io.Writer, path string, printFiles bool) error {
+	if err := printDirTree(out, "", path, printFiles); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func printDirTree(out io.Writer, prefix string, path string, printFiles bool) error {
+	dirContent, err := ioutil.ReadDir(path)
 	if err != nil {
 		return err
 	}
 
-	if !flag {
-		files = removeFiles(files)
+	if !printFiles {
+		dirContent = removeFiles(dirContent)
 	}
 
-	for i, file := range files {
-
-		fmt.Printf("%s%s\n", getIndent(path, file.Name(), i == len(files)-1), file.Name())
-
-		if file.IsDir() {
-			if err = dirTree(out, path+"/"+file.Name(), flag); err != nil {
-				return err
+	dirContentLen := len(dirContent)
+	if dirContentLen > 0 {
+		for i, entry := range dirContent {
+			entryName := entry.Name()
+			isLast := i == len(dirContent)-1
+			tmpForPrefix := ""
+			if isLast {
+				tmpForPrefix = "└───"
+			} else {
+				tmpForPrefix = "├───"
 			}
+			if entry.IsDir() {
+				fmt.Fprintf(out, "%v%v\n", prefix+tmpForPrefix, entryName)
 
+				nextPath := path2.Join(path, entryName)
+				if isLast {
+					tmpForPrefix = "\t"
+				} else {
+					tmpForPrefix = "│\t"
+				}
+				if err := printDirTree(out, prefix+tmpForPrefix, nextPath, printFiles); err != nil {
+					return err
+				}
+			} else {
+				fmt.Fprintf(out, "%v%v (%v)\n", prefix+tmpForPrefix, entryName, formatSize(entry.Size()))
+			}
 		}
 	}
 	return nil
 }
 
-func getIndent(path string, curFile string, isLast bool) string {
-	deep := strings.Count(path, "/")
-	str := ""
-	str += strings.Repeat("\t", deep)
-	//fmt.Println(path, removeLastDirInPath(path), curFile, checkParentToLastDir(path, curFile))
-	if isLast {
-		str += "└───"
-	} else {
-		str += "├───"
-	}
-	return str
-}
-
-func checkParentToLastDir(path string, curFile string) bool {
-	p := removeLastDirInPath(path)
-	if p == "" {
-		return true
-	}
-
-	files, _ := ioutil.ReadDir(path)
-	if files[len(files)-1].Name() == curFile {
-		return true
-	}
-
-	return false
-}
-
-func getSizeInString(b int64) string {
-	if b == 0 {
+func formatSize(size int64) string {
+	if size == 0 {
 		return "empty"
 	}
-	return fmt.Sprintf("%db", b)
+	return fmt.Sprintf("%vb", size)
 }
 
 func removeFiles(files []os.FileInfo) []os.FileInfo {
@@ -87,15 +85,4 @@ func removeFiles(files []os.FileInfo) []os.FileInfo {
 		}
 	}
 	return tmp
-}
-
-func removeLastDirInPath(path string) string {
-	newPath := ""
-	for i := len(path) - 1; i > 0; i-- {
-		if path[i] == '/' {
-			newPath = path[:i]
-			break
-		}
-	}
-	return newPath
 }
