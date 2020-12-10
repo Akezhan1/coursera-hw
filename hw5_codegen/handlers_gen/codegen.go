@@ -7,6 +7,7 @@ import (
 	"go/parser"
 	"go/token"
 	"os"
+	"reflect"
 	"strings"
 )
 
@@ -34,8 +35,9 @@ type Marks struct {
 
 //Parametr ...
 type Parametr struct {
-	Name string
-	Type string
+	Name      string
+	Type      string
+	ValidData Validator
 }
 
 //Validator ...
@@ -65,15 +67,49 @@ func main() {
 	fmt.Fprintln(out, `import (`+"\n\t"+`"context"`+"\n\t"+`"encoding/json"`+"\n\t"+`"net/http"`+"\n\t"+`"strconv"`+"\n"+`)`)
 	fmt.Fprintln(out) // empty line
 
-	for _, f := range node.Decls {
-		fnc, ok := f.(*ast.FuncDecl)
+	for _, element := range node.Decls {
+		fnc, ok := element.(*ast.FuncDecl)
 		if !ok {
+
+			//structs handler
+			gen, ok2 := element.(*ast.GenDecl)
+			if !ok2 {
+				continue
+			}
+
+			for _, spec := range gen.Specs {
+				currType, ok2 := spec.(*ast.TypeSpec)
+				if !ok2 {
+					continue
+				}
+
+				currStruct, ok2 := currType.Type.(*ast.StructType)
+				if !ok2 {
+					continue
+				}
+
+				for _, field := range currStruct.Fields.List {
+					if field.Tag != nil {
+						tag := reflect.StructTag(field.Tag.Value[1 : len(field.Tag.Value)-1])
+						if tag.Get("apivalidator") != "" {
+							//fmt.Println(currStruct.Fields.List[0].Names[0].Name)
+							for _, list := range currStruct.Fields.List {
+								for _, name := range list.Names {
+									fmt.Println(currType.Name, name.Name)
+								}
+							}
+						}
+					}
+				}
+			}
 			continue
 		}
 
 		if fnc.Doc == nil {
 			continue
 		}
+
+		//funcs handler
 		for _, c := range fnc.Doc.List {
 			if strings.HasPrefix(c.Text, "// apigen:api") {
 				mark := Marks{}
@@ -94,15 +130,16 @@ func main() {
 					structInfo.Type = z.Name
 				}
 
-				for i, v := range fnc.Type.Params.List {
+				for _, v := range fnc.Type.Params.List {
 					parametr := Parametr{}
 					parametr.Name = v.Names[0].Name
-					if i == 1 {
-						parametr.Type = v.Type.(*ast.Ident).Name
-					} else {
+					indt, ok := v.Type.(*ast.Ident)
+					if !ok {
 						parametr.Type = "context.Context"
-					}
+					} else {
+						parametr.Type = indt.Name
 
+					}
 					funcInfo.Parametrs = append(funcInfo.Parametrs, parametr)
 				}
 
@@ -114,5 +151,11 @@ func main() {
 			}
 		}
 	}
-	fmt.Println(len(structs))
+
+	for key, value := range structs {
+		fmt.Printf("key: %v, value: %v\n", key, value)
+		for _, v := range value {
+			fmt.Printf("struct info: %v\n", v)
+		}
+	}
 }
