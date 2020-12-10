@@ -53,6 +53,7 @@ type Validator struct {
 // код писать тут
 func main() {
 	structs := make(map[string][]*StructInfo)
+	//validData := make(map[string]Validator)
 
 	fset := token.NewFileSet()
 	node, err := parser.ParseFile(fset, os.Args[1], nil, parser.ParseComments)
@@ -88,16 +89,14 @@ func main() {
 					continue
 				}
 
-				for _, field := range currStruct.Fields.List {
+				for i, field := range currStruct.Fields.List {
 					if field.Tag != nil {
 						tag := reflect.StructTag(field.Tag.Value[1 : len(field.Tag.Value)-1])
-						if tag.Get("apivalidator") != "" {
-							//fmt.Println(currStruct.Fields.List[0].Names[0].Name)
-							for _, list := range currStruct.Fields.List {
-								for _, name := range list.Names {
-									fmt.Println(currType.Name, name.Name)
-								}
-							}
+						apiv := tag.Get("apivalidator")
+						if apiv != "" {
+							//validator := Validator{}
+							fmt.Println(currType.Name, currStruct.Fields.List[i].Names[0].Name, apiv)
+
 						}
 					}
 				}
