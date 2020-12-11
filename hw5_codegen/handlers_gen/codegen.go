@@ -9,7 +9,12 @@ import (
 	"os"
 	"reflect"
 	"strings"
+	"text/template"
 )
+
+type tmplData struct {
+	structs map[string][]*StructInfo
+}
 
 //StructInfo ... for MyApi and OtherApi
 type StructInfo struct {
@@ -37,23 +42,133 @@ type Marks struct {
 type Parametr struct {
 	Name      string
 	Type      string
-	ValidData Validator
+	ValidData []Validator
 }
 
 //Validator ...
 type Validator struct {
-	RequiredField string
-	MinReqField   int
-	Enum          []string
-	Default       string
-	Min           int
-	Max           int
+	Type      string
+	Name      string
+	Paramname string
+	Required  bool
+	Enum      []string
+	Default   string
+	Min       string
+	Max       string
 }
+
+var (
+	serveHTTPtmpl = template.Must(template.New("serveHTTPtmpl").Parse(`{{range $key, $value := .}}
+func (srv *{{$key}}) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	switch r.URL.Path { {{range $struct := $value}}{{range $funcInfo := $struct.Funcs}}
+	case "{{$funcInfo.MarkData.URL}}":{{if $funcInfo.MarkData.Auth}}
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusNotAcceptable)
+			data, _ := json.Marshal(resp{"error": "bad method"})
+			w.Write(data)
+			return
+		}{{else}}
+		if !(r.Method == http.MethodGet || r.Method == http.MethodPost) {
+			w.WriteHeader(http.StatusNotAcceptable)
+			data, _ := json.Marshal(resp{"error": "bad method"})
+			w.Write(data)
+			return
+		}{{end}}
+		srv.handle{{$key}}{{$funcInfo.Name}}(w, r){{end}}{{end}}
+	default:
+		w.WriteHeader(http.StatusNotFound)
+		data, _ := json.Marshal(resp{"error": "unknown method"})
+		w.Write(data)
+		return
+	}	
+}
+	{{end}}`))
+
+	funcsTmpl = template.Must(template.New("funcsTmpl").Parse(`{{range $key, $value := .}}{{range $struct := $value}}{{range $funcInfo := $struct.Funcs}}
+func (srv *{{$key}}) handle{{$key}}{{$funcInfo.Name}}(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json"){{if $funcInfo.MarkData.Auth}}
+	if at := r.Header.Get("X-Auth"); at != "100500" {
+		w.WriteHeader(http.StatusForbidden)
+		data, _ := json.Marshal(resp{"error": "unauthorized"})
+		w.Write(data)
+		return
+	}
+	{{end}}{{range $parametr := $funcInfo.Parametrs}}{{range $validData := $parametr.ValidData}}{{if eq $validData.Type "int"}}
+	{{$validData.Paramname}}_int := r.FormValue("{{$validData.Paramname}}")
+	{{$validData.Paramname}},err := strconv.Atoi({{$validData.Paramname}}_int)
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		data, _ := json.Marshal(resp{"error": "{{$validData.Paramname}} must be int"})
+		w.Write(data)
+		return
+	}{{else}}
+	{{$validData.Paramname}} := r.FormValue("{{$validData.Paramname}}"){{end}}{{if $validData.Required}}{{if eq $validData.Type "string"}}
+	if {{$validData.Paramname}} == "" {{else}}if len("{{$validData.Paramname}}") == 0{{end}}{
+		w.WriteHeader(http.StatusBadRequest)
+		data, _ := json.Marshal(resp{"error": "{{$validData.Paramname}} must me not empty"})
+		w.Write(data)
+		return
+	} 
+	{{end}}{{if ne $validData.Default ""}}
+	if {{$validData.Paramname}} == "" {
+		{{$validData.Paramname}} = "{{$validData.Default}}"
+	}
+	{{end}}{{if ne $validData.Max ""}}{{if eq $validData.Type "string"}}
+	if len({{$validData.Paramname}}){{else}}
+	if {{$validData.Paramname}}{{end}} > {{$validData.Max}} {
+		w.WriteHeader(http.StatusBadRequest)
+		data, _ := json.Marshal(resp{"error": "{{$validData.Paramname}} must be <= {{$validData.Max}}"})
+		w.Write(data)
+		return
+	}
+	{{end}}{{if ne $validData.Min ""}}{{if eq $validData.Type "string"}}
+	if len({{$validData.Paramname}}){{else}}if {{$validData.Paramname}}{{end}} < {{$validData.Min}} {
+		w.WriteHeader(http.StatusBadRequest)
+		data, _ := json.Marshal(resp{"error": "{{$validData.Paramname}}{{if eq $validData.Type "string"}} len{{end}} must be >= {{$validData.Min}}"})
+		w.Write(data)
+		return
+	}
+	{{end}}{{$len := len $validData.Enum}}{{if ne $len 0}}
+	if !({{range $i,$e := $validData.Enum}}{{if ne $i 0}} || {{end}}{{$validData.Paramname}} == "{{$e}}"{{end}}) {
+		w.WriteHeader(http.StatusBadRequest)
+		data, _ := json.Marshal(resp{"error": "{{$validData.Paramname}} must be one of [{{range $i,$e := $validData.Enum}}{{if ne $i 0}}, {{end}}{{$e}}{{end}}]"})
+		w.Write(data)
+		return
+	}{{end}}{{end}}
+	{{$len := len $parametr.ValidData}}{{if ne $len 0}}
+	{{$parametr.Name}} := {{$parametr.Type}} { {{range $validData := $parametr.ValidData}}
+		{{$validData.Name}}: {{$validData.Paramname}},{{end}}
+	}
+	user,err := srv.{{$funcInfo.Name}}(context.Background(),{{$parametr.Name}})
+	if err != nil {
+		if v, ok := err.(ApiError); ok {
+			w.WriteHeader(v.HTTPStatus)
+			data, _ := json.Marshal(resp{"error": v.Error()})
+			w.Write(data)
+			return
+		}
+		w.WriteHeader(http.StatusInternalServerError)
+		data, _ := json.Marshal(resp{"error": err.Error()})
+		w.Write(data)
+		return
+	}
+
+	response := map[string]interface{}{
+		"error":    "",
+		"response": user,
+	}
+	data, _ := json.Marshal(response)
+	w.WriteHeader(http.StatusOK)
+	w.Write(data)
+	return{{end}}{{end}}
+	
+}{{end}}{{end}}{{end}}`))
+)
 
 // код писать тут
 func main() {
 	structs := make(map[string][]*StructInfo)
-	//validData := make(map[string]Validator)
+	validData := make(map[string][]Validator)
 
 	fset := token.NewFileSet()
 	node, err := parser.ParseFile(fset, os.Args[1], nil, parser.ParseComments)
@@ -65,7 +180,7 @@ func main() {
 
 	fmt.Fprintln(out, `package `+node.Name.Name)
 	fmt.Fprintln(out) // empty line
-	fmt.Fprintln(out, `import (`+"\n\t"+`"context"`+"\n\t"+`"encoding/json"`+"\n\t"+`"net/http"`+"\n\t"+`"strconv"`+"\n"+`)`)
+	fmt.Fprintln(out, `import (`+"\n\t"+`"context"`+"\n\t"+`"encoding/json"`+"\n\t"+`"net/http"`+"\n\t"+`"strconv"`+"\n)\n\ntype resp map[string]interface{}")
 	fmt.Fprintln(out) // empty line
 
 	for _, element := range node.Decls {
@@ -89,17 +204,46 @@ func main() {
 					continue
 				}
 
-				for i, field := range currStruct.Fields.List {
+				var vdatas []Validator
+				for _, field := range currStruct.Fields.List {
 					if field.Tag != nil {
 						tag := reflect.StructTag(field.Tag.Value[1 : len(field.Tag.Value)-1])
 						apiv := tag.Get("apivalidator")
 						if apiv != "" {
-							//validator := Validator{}
-							fmt.Println(currType.Name, currStruct.Fields.List[i].Names[0].Name, apiv)
+							if apiv == "-" {
+								continue
+							}
 
+							validator := Validator{}
+							validator.Type = field.Type.(*ast.Ident).Name
+							validator.Name = field.Names[0].Name
+							validator.Paramname = strings.ToLower(validator.Name)
+
+							data := strings.Split(apiv, ",")
+							for _, v := range data {
+								elem := strings.Split(v, "=")
+								switch elem[0] {
+								case "required":
+									validator.Required = true
+								case "enum":
+									for _, e := range strings.Split(elem[1], "|") {
+										validator.Enum = append(validator.Enum, e)
+									}
+								case "default":
+									validator.Default = elem[1]
+								case "paramname":
+									validator.Paramname = elem[1]
+								case "min":
+									validator.Min = elem[1]
+								case "max":
+									validator.Max = elem[1]
+								}
+							}
+							vdatas = append(vdatas, validator)
 						}
 					}
 				}
+				validData[currType.Name.Name] = vdatas
 			}
 			continue
 		}
@@ -134,9 +278,10 @@ func main() {
 					parametr.Name = v.Names[0].Name
 					indt, ok := v.Type.(*ast.Ident)
 					if !ok {
-						parametr.Type = "context.Context"
+						parametr.Type = "context.Background()"
 					} else {
 						parametr.Type = indt.Name
+						parametr.ValidData = validData[indt.Name]
 
 					}
 					funcInfo.Parametrs = append(funcInfo.Parametrs, parametr)
@@ -155,6 +300,14 @@ func main() {
 		fmt.Printf("key: %v, value: %v\n", key, value)
 		for _, v := range value {
 			fmt.Printf("struct info: %v\n", v)
+			for _, f := range v.Funcs {
+				for _, vd := range f.Parametrs {
+					fmt.Println(vd.ValidData)
+				}
+			}
 		}
 	}
+
+	serveHTTPtmpl.Execute(out, structs)
+	funcsTmpl.Execute(out, structs)
 }
