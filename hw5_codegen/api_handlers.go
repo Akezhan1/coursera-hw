@@ -9,9 +9,8 @@ import (
 
 type resp map[string]interface{}
 
-
 func (srv *MyApi) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	switch r.URL.Path { 
+	switch r.URL.Path {
 	case "/user/profile":
 		if !(r.Method == http.MethodGet || r.Method == http.MethodPost) {
 			w.WriteHeader(http.StatusNotAcceptable)
@@ -33,11 +32,11 @@ func (srv *MyApi) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		data, _ := json.Marshal(resp{"error": "unknown method"})
 		w.Write(data)
 		return
-	}	
+	}
 }
-	
+
 func (srv *OtherApi) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	switch r.URL.Path { 
+	switch r.URL.Path {
 	case "/user/create":
 		if r.Method != http.MethodPost {
 			w.WriteHeader(http.StatusNotAcceptable)
@@ -51,25 +50,24 @@ func (srv *OtherApi) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		data, _ := json.Marshal(resp{"error": "unknown method"})
 		w.Write(data)
 		return
-	}	
+	}
 }
-	
+
 func (srv *MyApi) handleMyApiProfile(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	
+
 	login := r.FormValue("login")
 	if login == "" {
 		w.WriteHeader(http.StatusBadRequest)
 		data, _ := json.Marshal(resp{"error": "login must me not empty"})
 		w.Write(data)
 		return
-	} 
-	
-	
-	in := ProfileParams { 
+	}
+
+	in := ProfileParams{
 		Login: login,
 	}
-	user,err := srv.Profile(context.Background(),in)
+	user, err := srv.Profile(context.Background(), in)
 	if err != nil {
 		if v, ok := err.(ApiError); ok {
 			w.WriteHeader(v.HTTPStatus)
@@ -91,7 +89,7 @@ func (srv *MyApi) handleMyApiProfile(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	w.Write(data)
 	return
-	
+
 }
 func (srv *MyApi) handleMyApiCreate(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
@@ -101,29 +99,28 @@ func (srv *MyApi) handleMyApiCreate(w http.ResponseWriter, r *http.Request) {
 		w.Write(data)
 		return
 	}
-	
-	
+
 	login := r.FormValue("login")
 	if login == "" {
 		w.WriteHeader(http.StatusBadRequest)
 		data, _ := json.Marshal(resp{"error": "login must me not empty"})
 		w.Write(data)
 		return
-	} 
-	
+	}
+
 	if len(login) < 10 {
 		w.WriteHeader(http.StatusBadRequest)
 		data, _ := json.Marshal(resp{"error": "login len must be >= 10"})
 		w.Write(data)
 		return
 	}
-	
+
 	full_name := r.FormValue("full_name")
 	status := r.FormValue("status")
 	if status == "" {
 		status = "user"
 	}
-	
+
 	if !(status == "user" || status == "moderator" || status == "admin") {
 		w.WriteHeader(http.StatusBadRequest)
 		data, _ := json.Marshal(resp{"error": "status must be one of [user, moderator, admin]"})
@@ -131,7 +128,7 @@ func (srv *MyApi) handleMyApiCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	age_int := r.FormValue("age")
-	age,err := strconv.Atoi(age_int)
+	age, err := strconv.Atoi(age_int)
 	if err != nil {
 		w.WriteHeader(http.StatusBadRequest)
 		data, _ := json.Marshal(resp{"error": "age must be int"})
@@ -150,15 +147,14 @@ func (srv *MyApi) handleMyApiCreate(w http.ResponseWriter, r *http.Request) {
 		w.Write(data)
 		return
 	}
-	
-	
-	in := CreateParams { 
-		Login: login,
-		Name: full_name,
+
+	in := CreateParams{
+		Login:  login,
+		Name:   full_name,
 		Status: status,
-		Age: age,
+		Age:    age,
 	}
-	user,err := srv.Create(context.Background(),in)
+	user, err := srv.Create(context.Background(), in)
 	if err != nil {
 		if v, ok := err.(ApiError); ok {
 			w.WriteHeader(v.HTTPStatus)
@@ -180,7 +176,7 @@ func (srv *MyApi) handleMyApiCreate(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	w.Write(data)
 	return
-	
+
 }
 func (srv *OtherApi) handleOtherApiCreate(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
@@ -190,29 +186,28 @@ func (srv *OtherApi) handleOtherApiCreate(w http.ResponseWriter, r *http.Request
 		w.Write(data)
 		return
 	}
-	
-	
+
 	username := r.FormValue("username")
 	if username == "" {
 		w.WriteHeader(http.StatusBadRequest)
 		data, _ := json.Marshal(resp{"error": "username must me not empty"})
 		w.Write(data)
 		return
-	} 
-	
+	}
+
 	if len(username) < 3 {
 		w.WriteHeader(http.StatusBadRequest)
 		data, _ := json.Marshal(resp{"error": "username len must be >= 3"})
 		w.Write(data)
 		return
 	}
-	
+
 	account_name := r.FormValue("account_name")
 	class := r.FormValue("class")
 	if class == "" {
 		class = "warrior"
 	}
-	
+
 	if !(class == "warrior" || class == "sorcerer" || class == "rouge") {
 		w.WriteHeader(http.StatusBadRequest)
 		data, _ := json.Marshal(resp{"error": "class must be one of [warrior, sorcerer, rouge]"})
@@ -220,7 +215,7 @@ func (srv *OtherApi) handleOtherApiCreate(w http.ResponseWriter, r *http.Request
 		return
 	}
 	level_int := r.FormValue("level")
-	level,err := strconv.Atoi(level_int)
+	level, err := strconv.Atoi(level_int)
 	if err != nil {
 		w.WriteHeader(http.StatusBadRequest)
 		data, _ := json.Marshal(resp{"error": "level must be int"})
@@ -239,15 +234,14 @@ func (srv *OtherApi) handleOtherApiCreate(w http.ResponseWriter, r *http.Request
 		w.Write(data)
 		return
 	}
-	
-	
-	in := OtherCreateParams { 
+
+	in := OtherCreateParams{
 		Username: username,
-		Name: account_name,
-		Class: class,
-		Level: level,
+		Name:     account_name,
+		Class:    class,
+		Level:    level,
 	}
-	user,err := srv.Create(context.Background(),in)
+	user, err := srv.Create(context.Background(), in)
 	if err != nil {
 		if v, ok := err.(ApiError); ok {
 			w.WriteHeader(v.HTTPStatus)
@@ -269,5 +263,5 @@ func (srv *OtherApi) handleOtherApiCreate(w http.ResponseWriter, r *http.Request
 	w.WriteHeader(http.StatusOK)
 	w.Write(data)
 	return
-	
+
 }
